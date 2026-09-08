@@ -1,0 +1,7 @@
+/target
+/data/index/
+/data/*.fna
+/data/*.fna.gz
+/data/*.fna.gz.partial
+*.redb
+/data/human.rna.tar
