@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
+use tracing::warn;
 
 use crate::store::{GeneInterner, Packer, TxMeta};
 
@@ -10,8 +11,6 @@ pub const SHARD_COUNT: u32 = 16;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FastaError {
-    #[error("missing shard {0}")]
-    MissingShard(PathBuf),
     #[error("io error reading {path}: {source}")]
     Io {
         path: PathBuf,
@@ -26,14 +25,24 @@ pub fn shard_path(data_dir: &Path, i: u32) -> PathBuf {
     data_dir.join(format!("human.{i}.rna.fna"))
 }
 
+/// Expected `human.1.rna.fna` … `human.{SHARD_COUNT}.rna.fna`.
+/// Missing files are skipped with a warning so startup can continue.
 pub fn required_shards(data_dir: &Path) -> Result<Vec<PathBuf>, FastaError> {
     let mut out = Vec::with_capacity(SHARD_COUNT as usize);
     for i in 1..=SHARD_COUNT {
         let p = shard_path(data_dir, i);
-        if !p.is_file() {
-            return Err(FastaError::MissingShard(p));
+        if p.is_file() {
+            out.push(p);
+        } else {
+            warn!(path = %p.display(), shard = i, "missing FASTA shard, skipping");
         }
-        out.push(p);
+    }
+    if out.is_empty() {
+        warn!(
+            data_dir = %data_dir.display(),
+            expected = SHARD_COUNT,
+            "no human.*.rna.fna shards found; starting with empty transcriptome"
+        );
     }
     Ok(out)
 }
@@ -197,5 +206,20 @@ mod tests {
     fn strip_acc_version() {
         assert_eq!(strip_version("NM_174936.4"), "NM_174936");
         assert_eq!(strip_version("NM_174936"), "NM_174936");
+    }
+
+    #[test]
+    fn missing_shards_are_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = required_shards(dir.path()).unwrap();
+        assert!(paths.is_empty());
+
+        std::fs::write(dir.path().join("human.2.rna.fna"), b">x\nACGT\n").unwrap();
+        let paths = required_shards(dir.path()).unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0].file_name().and_then(|s| s.to_str()),
+            Some("human.2.rna.fna")
+        );
     }
 }

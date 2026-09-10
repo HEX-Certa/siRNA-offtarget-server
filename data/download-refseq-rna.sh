@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Download all human.*.rna.fna.gz shards from NCBI RefSeq into this directory,
-# then gunzip. Skips files that already exist (gz or uncompressed).
+# Download human.1.rna.fna.gz … human.16.rna.fna.gz from NCBI RefSeq into this
+# directory, then gunzip. Skips files that already exist (gz or uncompressed).
+# A shard that is 404 on the remote is skipped with a warning (NCBI count varies).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,9 +34,15 @@ for i in $(seq "$START" "$MAX"); do
   fi
 
   echo "[$i/$MAX] download: $gz"
-  # -C - resume; -f fail on HTTP errors; -L follow redirects
-  if ! curl -fL --retry 3 --retry-delay 2 -C - -o "${gz}.partial" "$url"; then
-    echo "  FAILED: $url" >&2
+  # -C - resume; -L follow redirects. Status via -w (do not use -f: 404 is skip).
+  code="$(curl -sSL --retry 3 --retry-delay 2 -C - -o "${gz}.partial" -w "%{http_code}" "$url" || true)"
+  if [[ "$code" == "404" ]]; then
+    echo "[$i/$MAX] WARN: not on remote, skip: $gz" >&2
+    rm -f "${gz}.partial"
+    continue
+  fi
+  if [[ "$code" != "200" && "$code" != "206" ]]; then
+    echo "  FAILED: $url (HTTP ${code:-curl})" >&2
     rm -f "${gz}.partial"
     exit 1
   fi

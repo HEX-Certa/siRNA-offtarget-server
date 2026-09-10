@@ -43,7 +43,7 @@ curl -sS -X POST "$BASE/v1/offtarget/check" \
 ./data/download-refseq-rna.sh
 ```
 
-脚本默认下载分片 1–16，已存在的 `.fna` / `.gz` 会跳过。可覆盖范围，例如：
+脚本默认下载分片 1–16，已存在的 `.fna` / `.gz` 会跳过；远端 404 的分片会警告并跳过。可覆盖范围，例如：
 
 ```bash
 START=1 MAX=16 ./data/download-refseq-rna.sh
